@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"strings"
 
 	"github.com/alecthomas/kong"
@@ -16,14 +17,15 @@ var args struct {
 	config.ConfigArgs
 	cmd.CommonOptions
 
-	Endpoint   string   `help:"Endpoint of the desired API." arg:""`
+	Endpoint   string   `help:"Endpoint of the desired API." arg:"" optional:""`
 	Parameters []string `help:"Parameter for the endpoint in the format 'key:value', e.g., 'id:123'." arg:"" optional:""`
 	Table      bool     `help:"Attempt to output data as a TSV. Fallback to JSON if the table conversion fails." default:"false"`
+	List       bool     `help:"List all API endpoints." default:"false"`
 }
 
 func main() {
 	kong.Parse(&args,
-		kong.Description("Execute an API request to the specified endpoint. For more information on available API endpoints, see the API resource file at: 'resources/api.json'."),
+		kong.Description("Execute an API request to a specified endpoint."),
 	)
 
 	err := config.HandleConfigArgs(args.ConfigArgs)
@@ -34,13 +36,19 @@ func main() {
 		return
 	}
 
-	var endpointDescription *core.EndpointDescription
+	if args.List {
+		listAPIEndpoints()
+
+		// Return to prevent further execution after listing endpoints.
+		return
+	}
 
 	apiDescription, err := api.Describe(*api.GetRoutes())
 	if err != nil {
 		log.Fatal("Failed to describe API endpoints.", err)
 	}
 
+	var endpointDescription *core.EndpointDescription
 	for endpoint, requestResponse := range apiDescription.Endpoints {
 		if endpoint == args.Endpoint {
 			endpointDescription = &requestResponse
@@ -49,7 +57,7 @@ func main() {
 	}
 
 	if endpointDescription == nil {
-		log.Fatal("Failed to find the endpoint.", log.NewAttr("endpoint", args.Endpoint))
+		log.Fatal("Failed to find the endpoint. See --list to view all endpoints.", log.NewAttr("endpoint", args.Endpoint))
 
 		// Return to prevent further execution after log.Fatal().
 		return
@@ -75,4 +83,15 @@ func main() {
 	}
 
 	cmd.MustHandleCMDRequestAndExitFull(args.Endpoint, request, nil, args.CommonOptions, printFunc)
+}
+
+func listAPIEndpoints() {
+	apiDescription, err := api.Describe(*api.GetRoutes())
+	if err != nil {
+		log.Fatal("Failed to describe API endpoints: '%w'.", err)
+	}
+
+	for endpoint := range apiDescription.Endpoints {
+		fmt.Println(endpoint)
+	}
 }
